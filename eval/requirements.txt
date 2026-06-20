@@ -1,0 +1,17 @@
+# Evaluation pipeline dependencies
+# Install with: pip install -r eval/requirements.txt
+
+# Benchmark builder
+anthropic>=0.28.0         # Claude API for benchmark generation + LLM judge
+
+# Evaluator — fine-tuned model inference
+torch>=2.2.0
+transformers>=4.43.0
+accelerate>=0.30.0
+
+# Evaluator — competing model APIs
+openai>=1.30.0            # GPT-4o
+anthropic>=0.28.0         # Claude (already above)
+
+# Shared
+tqdm>=4.66.0
