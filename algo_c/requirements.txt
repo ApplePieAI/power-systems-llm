@@ -1,0 +1,26 @@
+# Algorithm C — DPO Training Dependencies
+# Install with: pip install -r algo_c/requirements.txt
+
+# Core training
+torch>=2.2.0
+transformers>=4.43.0
+datasets>=2.18.0
+accelerate>=0.30.0
+
+# TRL (DPOTrainer) — must be >=0.9 for DPOConfig
+trl>=0.9.4
+
+# LoRA / PEFT
+peft>=0.11.0
+
+# Quantisation (bitsandbytes — for paged_adamw_32bit optimiser)
+bitsandbytes>=0.43.0
+
+# Preference dataset builder
+anthropic>=0.25.0
+
+# Progress / logging
+tqdm>=4.65.0
+
+# FlashAttention-2 (A100/H100 only — install separately):
+# pip install flash-attn --no-build-isolation
