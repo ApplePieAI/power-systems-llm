@@ -51,7 +51,7 @@ from tqdm import tqdm
 
 # Local modules
 from extract  import extract_and_chunk
-from generate import generate_pairs, GPT4oGenerator
+from generate import generate_pairs, GPT4oGenerator, ClaudeGenerator
 from validate import (
     dedup, filter_pairs, compute_stats, print_stats,
     export_sme_review, split_dataset, strip_metadata,
@@ -153,13 +153,23 @@ def run(args: argparse.Namespace) -> None:
 
     # ── GPT-4o client ──
     gpt = None
-    if args.strategy in ("gpt4o", "both"):
+    if args.strategy in ("gpt4o",):
         api_key = args.openai_api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             log.error("OPENAI_API_KEY not set. Use --openai_api_key or export it.")
             sys.exit(1)
         gpt = GPT4oGenerator(api_key=api_key)
         log.info("GPT-4o client initialised")
+
+    # ── Claude client ──
+    claude = None
+    if args.strategy in ("claude", "both", "cot", "cot+claude"):
+        api_key = args.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            log.error("ANTHROPIC_API_KEY not set. Use --anthropic_api_key or export it.")
+            sys.exit(1)
+        claude = ClaudeGenerator(api_key=api_key)
+        log.info(f"Claude client initialised (model: {claude.model})")
 
     # ── Discover sources ──
     sources = discover_sources(args.sources_dir, args.urls)
@@ -201,11 +211,16 @@ def run(args: argparse.Namespace) -> None:
         # Stage 3: Generate pairs from each chunk
         src_pairs = []
         for chunk in chunks:
+            # Stop early if max_pairs limit reached
+            if args.max_pairs > 0 and len(all_pairs) + len(src_pairs) >= args.max_pairs:
+                break
+
             pairs = generate_pairs(
                 chunk,
                 strategy=args.strategy,
                 num_pairs=args.pairs_per_chunk,
                 gpt_generator=gpt,
+                claude_generator=claude,
             )
             for p in pairs:
                 p["source"] = src_label
@@ -216,6 +231,10 @@ def run(args: argparse.Namespace) -> None:
 
         tqdm.write(f"  {src_label}: {len(chunks)} chunks → {len(src_pairs)} pairs  "
                    f"(total: {len(all_pairs):,})")
+
+        if args.max_pairs > 0 and len(all_pairs) >= args.max_pairs:
+            log.info(f"Reached --max_pairs limit ({args.max_pairs}), stopping.")
+            break
 
         # Save checkpoint every 10 sources
         if len(done_set) % 10 == 0:
@@ -230,6 +249,8 @@ def run(args: argparse.Namespace) -> None:
 
     if gpt:
         log.info(f"GPT-4o cost:  {gpt.cost_summary()}")
+    if claude:
+        log.info(f"Claude cost:  {claude.cost_summary()}")
 
     if not all_pairs:
         log.error("No pairs generated — check your source documents.")
@@ -328,11 +349,15 @@ def parse_args() -> argparse.Namespace:
                         help="Text file with one URL per line")
 
     # Strategy
-    parser.add_argument("--strategy",       default="both",
-                        choices=["template", "gpt4o", "both"],
-                        help="template=fast/free  gpt4o=best quality  both=recommended")
-    parser.add_argument("--openai_api_key", default=None,
+    parser.add_argument("--strategy",          default="both",
+                        choices=["template", "gpt4o", "claude", "cot", "both", "cot+claude"],
+                        help="template=free  claude=standard  cot=reasoning  cot+claude=best quality")
+    parser.add_argument("--openai_api_key",    default=None,
                         help="OpenAI API key (or set OPENAI_API_KEY env var)")
+    parser.add_argument("--anthropic_api_key", default=None,
+                        help="Anthropic API key (or set ANTHROPIC_API_KEY env var)")
+    parser.add_argument("--max_pairs",         type=int, default=0,
+                        help="Stop after generating this many pairs (0 = no limit)")
 
     # Chunking
     parser.add_argument("--chunk_words",    type=int, default=800,

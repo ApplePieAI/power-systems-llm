@@ -235,11 +235,50 @@ def clean_text(text: str) -> str:
 # CHUNKER
 # ──────────────────────────────────────────────────────────────────────────────
 
+_BOILERPLATE = re.compile(
+    r"^("
+    r"\s*(references|bibliography|further reading|index|contents|table of contents|acknowledgements?|preface|foreword|about the (author|editor))"
+    r"|\s*\d+\.\s+references"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+_CITATION_LINE = re.compile(
+    r"^[A-Z][a-z]+,\s+[A-Z]\.\w*.*\d{4}",  # "Smith, J.A., ... 1995"
+    re.MULTILINE,
+)
+
+
+def _is_boilerplate(text: str) -> bool:
+    """Return True if the chunk is a references list, index, or front matter."""
+    if _BOILERPLATE.search(text[:200]):
+        return True
+    # If >40% of lines look like citations, it's a reference list
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        return True
+    citation_lines = sum(1 for l in lines if _CITATION_LINE.match(l))
+    return citation_lines / len(lines) > 0.4
+
+
+def _prose_ratio(text: str) -> float:
+    """Fraction of words that look like normal English prose (not equations/symbols)."""
+    words = text.split()
+    if not words:
+        return 0.0
+    prose = sum(
+        1 for w in words
+        if w.isalpha() or (w.replace(",", "").replace(".", "").isdigit() and len(w) <= 6)
+    )
+    return prose / len(words)
+
+
 def chunk_text(
     text: str,
     chunk_words: int = 800,
     overlap_words: int = 100,
     min_words: int = 60,
+    min_prose_ratio: float = 0.55,
 ) -> list[str]:
     """
     Split cleaned text into overlapping word-based chunks.
@@ -264,7 +303,9 @@ def chunk_text(
         end = min(start + chunk_words, len(words))
         chunk = " ".join(words[start:end])
 
-        if len(chunk.split()) >= min_words:
+        if (len(chunk.split()) >= min_words
+                and _prose_ratio(chunk) >= min_prose_ratio
+                and not _is_boilerplate(chunk)):
             chunks.append(chunk)
 
         if end >= len(words):
